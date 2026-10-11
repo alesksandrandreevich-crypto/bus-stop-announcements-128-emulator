@@ -1,0 +1,224 @@
+<!doctype html><html lang="uk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="БК">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><title>БК Інформатор</title>
+<style>
+:root{--bg:#1b1d21;--fg:#e8e8e8;--b:#2d3037;--lcd:#b7c88a;--lcdt:#1d2a0f}
+@media(prefers-color-scheme:light){:root{--bg:#e6e8ec;--fg:#111;--b:#fff}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+body{margin:0 auto;background:var(--bg);color:var(--fg);font:15px -apple-system,sans-serif;padding:env(safe-area-inset-top) 12px env(safe-area-inset-bottom);max-width:520px}
+h1{font-size:15px;margin:10px 0 6px;opacity:.7;font-weight:600}
+.dev{background:#3a3d45;border-radius:14px;padding:12px}
+.lcd{width:max-content;margin:0 auto;background:var(--lcd);color:var(--lcdt);font:19px/1.3 ui-monospace,Menlo,monospace;padding:10px 12px;border-radius:6px;box-shadow:inset 0 2px 6px #0006}
+.lcd div{height:1.3em;white-space:pre;overflow:hidden}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+button,.fb{font:600 15px -apple-system,sans-serif;border:0;border-radius:10px;padding:14px 0;background:var(--b);color:var(--fg);box-shadow:0 2px 0 #0005}
+button:active{transform:translateY(2px);filter:brightness(.8)}
+.ky{background:#d8d4c8;color:#222}.sm{padding:9px 0;font-size:12px}.c3{grid-template-columns:repeat(3,1fr)}
+canvas.bd{display:block;width:100%;background:#000;border-radius:6px;margin:6px 0}
+.ind{display:flex;gap:8px;margin-top:10px}.ind span{flex:1;text-align:center;font-size:12px;padding:5px;border-radius:6px;background:var(--b);opacity:.5}.ind span.on{background:#2e7d32;color:#fff;opacity:1}
+.fb{display:block;padding:12px 0;text-align:center;font-size:14px}input[type=file]{display:none}
+small{opacity:.6;display:block;margin-top:8px;line-height:1.35}
+</style></head><body>
+<h1>БК · емулятор інформатора</h1>
+<div class="dev"><div class="lcd"><div id="l1"></div><div id="l2"></div></div>
+<div class="ind"><span id="ii">Салон</span><span id="ie">Зовнішній гучномовець</span></div>
+<div class="keys" id="keys"></div>
+<div class="keys">
+<button class="sm" id="dk0">Д+Кон (Д1)</button><button class="sm" id="dk1">Д+Оп1 (Д2)</button><button class="sm" id="dk2">Д+Оп2 (Д3)</button><button class="sm" id="dk3">Д+П/С (Д4)</button></div>
+<div class="keys c3">
+<button class="sm" id="rst">Скидання (←+→)</button><button class="sm" id="cfg">Налашт. (Мш+П/С)</button><button class="sm" id="req">Вимога зупинки</button>
+<button class="sm" id="sl">←+П/С (без звуку)</button><button class="sm" id="sr">→+П/С (без звуку)</button><button class="sm" id="mic">Мікрофон</button>
+<button class="sm" id="vu">Гучність +</button><button class="sm" id="vd">Гучність −</button></div></div>
+<h1>Зовнішнє табло 112×16</h1><canvas class="bd" id="bx"></canvas>
+<h1>Внутрішнє табло 96×8</h1><canvas class="bd" id="bi"></canvas>
+<h1>Flash-карта</h1>
+<label class="fb"><input type="file" id="fz" accept=".zip,.rar,application/zip">Завантажити архів (.zip) з P.TXT, S/, R/</label>
+<small id="info">Архів не завантажено.</small>
+<small>Мш — маршрут, Кон — кінцева, ←/→ — попередня/наступна дія (рух до зупинки → прибуття), П/С — повтор/стоп/вибір, Д — додаткові оголошення.</small>
+<script>
+//CORE
+const csv=s=>{const o=[];let c='',q=0;for(const ch of s){if(ch=='"')q=!q;else if(ch==','&&!q){o.push(c);c=''}else c+=ch}o.push(c);return o.map(x=>x.trim()).filter(Boolean)};
+const lists=s=>(s||'').split('\\').map(csv);
+function pstop(l){let mid=0,term=0,blank=0,noaux=0;
+ if(l[0]=='~'){mid=1;l=l.slice(1)}if(l[0]=='#'){term=1;l=l.slice(1)}
+ while(l[0]=='('){const j=l.indexOf(')');if(j<0)break;l=l.slice(j+1)}   // координаты (п.2.8) не отображаются
+ if(l[0]==' ')l=l.slice(1);
+ let ads=null;const m=l.match(/\{([^}]*)\}\s*$/);if(m){ads=m[1].split('\\').map(csv);l=l.slice(0,m.index)}
+ const i=l.indexOf('^'),nm=i<0?l:l.slice(0,i),tl=i<0?'':l.slice(i+1),j=tl.indexOf('^^'),ls=lists(j<0?tl:tl.slice(0,j)),ex=j<0?null:lists(tl.slice(j+2));let n=nm;
+ if(n[0]=='@'){blank=1;n=n.slice(1)}else if(n[0]=='!'){noaux=1;n=n.slice(1)}
+ const subs=n.split('\\').map(x=>x.trim());
+ return{mid,term,blank,noaux,name:subs[0].replace(/\t+/g,' '),xl:ex,tabs:subs[0].split('\t').map(x=>x.trim()).filter(Boolean),dep:ls[0]||[],arr:ls[1]||[],ads}}
+const hd=x=>{x=(x||'~').slice(1);const m=x.match(/^<([^>]*)>/);let p=null;if(m){p=m[1].split(',').map(a=>parseInt(a)||0);x=x.slice(m[0].length)}
+ const i=x.indexOf('^');return{txt:i<0?x:x.slice(0,i),sq:i<0?[]:lists(x.slice(i+1)).filter(a=>a.length),p}};
+function parse(t){t=t.replace(/^\uFEFF/,'');const L=t.split(/\r?\n/);let k=0;const H=[];
+ while(k<L.length&&!L[k].startsWith('|')){H.push(L[k]);k++}
+ const ops=[0,1].map(n=>hd(H[n]).sq);
+ const adds=[2,3,4,5].map(n=>{const a=hd(H[n]);const p=a.p||[1,0,0];return{txt:a.txt.trim(),f:a.sq[0]||[],p:[p[0]??1,p[1]??0,p[2]??0],has:!!(a.txt.trim()||a.sq.length)}});
+ const ev=[6,7,8,9,10,11].map(n=>{const a=hd(H[n]);return{txt:a.txt.trim(),f:a.sq[0]||[],n:a.p?a.p[0]:0}});
+ const R=[],B={};let cur=null,bl=null;const END=/\}\s*$/;
+ for(;k<L.length;k++){const l=L[k];
+  if(bl){bl.t+=' '+l.trim();if(END.test(l)){B[bl.id]=bl.t.replace(END,'').trim();bl=null}continue}
+  if(l.startsWith('{@')){bl={id:l[2],t:l.slice(3).trim()};if(END.test(l)){B[bl.id]=bl.t.replace(END,'').trim();bl=null}continue}
+  if(!l.trim())continue;
+  if(l[0]=='|'){cur=null;let b=l.slice(1).replace(/\{[^}]*\}\s*$/,'');if(b.trim()){const i=b.indexOf('^'),h=i<0?b:b.slice(0,i),j=h.indexOf('-');
+   cur={label:h.trim(),num:(j<0?h:h.slice(0,j)).trim(),com:j<0?'':h.slice(j+1).trim(),f:i<0?[]:csv(b.slice(i+1)),st:[]};R.push(cur)}continue}
+  if(cur)cur.st.push(pstop(l))}
+ R.forEach(r=>{const t=r.st.map((s,i)=>s.term?i:-1).filter(i=>i>=0);const t2=t.length>1?t[1]:r.st.length-1;r.seq=[r.st.slice(0,t2+1),[...r.st.slice(t2),r.st[0]]]});
+ return{ops,adds,ev,blocks:B,routes:R.filter(r=>r.st.length)}}
+function zipIndex(buf){const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength);let e=buf.length-22;while(e>=0&&dv.getUint32(e,true)!=0x06054b50)e--;
+ if(e<0)throw'Це не ZIP-архів';const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);const ents={},LK={};
+ for(let i=0;i<n&&dv.getUint32(p,true)==0x02014b50;i++){const m=dv.getUint16(p+10,true),cs=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),el=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),off=dv.getUint32(p+42,true);
+  const nb=buf.subarray(p+46,p+46+nl);let name;try{name=new TextDecoder('utf-8',{fatal:true}).decode(nb)}catch(_){name=new TextDecoder('ibm866').decode(nb)}
+  name=name.replace(/#U([0-9a-f]{4})/gi,(_,h)=>String.fromCharCode(parseInt(h,16)));
+  if(!name.endsWith('/')){ents[name]={m,cs,off};LK[name.toLowerCase()]=name}p+=46+nl+el+cl}
+ return{buf,dv,ents,LK}}
+async function zread(Z,key){const e=Z.ents[key],q=e.off,d=Z.buf.subarray(q+30+Z.dv.getUint16(q+26,true)+Z.dv.getUint16(q+28,true),q+30+Z.dv.getUint16(q+26,true)+Z.dv.getUint16(q+28,true)+e.cs);
+ if(e.m==0)return d.slice();return new Uint8Array(await new Response(new Blob([d]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer())}
+//ENDCORE
+const $=id=>document.getElementById(id),LS=localStorage;
+const UK="Українська|ЗУПИНКА:|КІНЦЕВА|НАСТУПНА:|Наступна зупинка:|Виконано.|Запис зупинки.|П/С - далi...|Запис наступної.|Виконується...|Вiдмiна.|Поновити.|Виберiть № маршруту:|Усі світити|Усі погасити|Шахматка 0|Шахматка 1|Виберiть кiнцеву:|П/С-для продовж.:|Переднє|Бічне 1|Внутрішнє 1|Заднє|Внутрішнє 2|Бічне 2|Бічне 3|Внутрішнє 3|Внутрішнє 4|MODE (РЕЖИМ):|Збереження зупинки|Тест однократний|Тест циклічний|Тест функц.|Lang (Мова)|Яскравість|Параметри табло|Скинути параметри|Статус БК|УВIМКНЕНО|ВИМКНУТО|Виведення на табло|Номер рядка|Виводити|Не виводити|Нема|Ф.Тест, циклів=%d|Помилок=%d|Буде відновлено ост. стан|Вибрати КІНЦЕВУ|В БК нема RTC|Додатк.оголош.:|Дод.Оголошення|Оголошення|Гучність|в салоні|в кабіні|мікрофону|Рестарт Flash Card|Допоміжний текст|Швидкість|Нема зв'язку|Корекція|Зовн.Оповіщення|GPS параметри|Підкл./Відкл.|Дистанція|Швидкість від'їзду|Швидкість прибуття|Кіл-сть пр.файлів|Похибка GPS|АвтоСамонавчання|Самонавчання|Пр.файлів 1-ї зуп.|Зміна напрямку на кінцевій|При прибутті|При відправленні|Файл маршрутів|Файл не знайдено|Реж.зовн.табло|2 кінцеві|Кінцева та проміжні|Одна кінцева".split('|');
+const S={routes:[],r:0,dir:0,k:1,mode:'run',menu:null,sel:0,ops:[],adds:[],ev:[],blocks:{},addOn:[0,0,0,0],cnt:[0,0,0,0],opN:[0,0],busy:0,ch:'',run:'',tl:0,Z:null,root:'',SD:'S/',pfs:[],LANGS:[{n:'Українська',L:UK}],lastAd:'',
+ cfg:{lang:0,vm:7,vs:7,vp:8,vc:5,ve:14,ext:1,disp:0,flip:0,enc:'auto',aux:1,sv:0,pf:'P.TXT'}};
+try{Object.assign(S.cfg,JSON.parse(LS.bk2||'{}'))}catch(e){}
+const save=()=>LS.bk2=JSON.stringify(S.cfg);
+const t=i=>{const L=(S.LANGS[S.cfg.lang]||S.LANGS[0]).L;return(L[i]&&L[i].trim())||UK[i]||''};
+const dec=u=>{if(S.cfg.enc=='auto'){try{return new TextDecoder('utf-8',{fatal:true}).decode(u)}catch(e){return new TextDecoder('windows-1251').decode(u)}}return new TextDecoder(S.cfg.enc).decode(u)};
+const idb=(m,v)=>new Promise((res,rej)=>{const r=indexedDB.open('bk',1);r.onupgradeneeded=()=>r.result.createObjectStore('f');r.onerror=rej;r.onsuccess=()=>{const tx=r.result.transaction('f',m=='get'?'readonly':'readwrite'),s=tx.objectStore('f'),q=m=='get'?s.get('zip'):s.put(v,'zip');tx.oncomplete=()=>res(q.result);tx.onerror=rej}});
+const rt=()=>S.routes[S.r],seq=()=>rt()?.seq[S.dir]||[],cur=()=>seq()[S.k>>1],ph=()=>S.k&1?'arr':'dep';
+async function loadZip(file,keep){
+ if(/\.rar$/i.test(file.name)){$('info').textContent='RAR поки не підтримується — запакуйте в ZIP.';return}
+ try{const Z=zipIndex(new Uint8Array(await file.arrayBuffer()));S.Z=Z;const ks=Object.keys(Z.ents);
+  const pk=ks.filter(k=>/(^|\/)p\.txt$/i.test(k)).sort((a,b)=>a.length-b.length)[0]||ks.find(k=>/(^|\/)p[^\/]*\.txt$/i.test(k));
+  if(!pk)throw'У архіві немає P.TXT';S.root=pk.slice(0,pk.lastIndexOf('/')+1);
+  const rl=k=>k.startsWith(S.root)&&!k.slice(S.root.length).includes('/')?k.slice(S.root.length):null;
+  S.pfs=ks.map(rl).filter(n=>n&&/^p.*\.txt$/i.test(n)).sort();S.LANGS=[{n:'Українська',L:UK}];
+  for(const n of ks.map(rl).filter(n=>n&&/^lang.*\.txt$/i.test(n)).sort()){const L=dec(await zread(Z,S.root+n)).split(/\r?\n/),ok=L.length>=87;
+   S.LANGS.push({n:(L[0]||n).trim()+(ok?'':' *'),L:ok?L:L.slice(0,5)})}   // короткі/старі lang-файли: лише перші 5 рядків, решта — вбудована мова
+  if(!keep)idb('put',file).catch(()=>0);
+  await loadP()}catch(e){$('info').textContent='Помилка: '+(e.message||e)}}
+async function loadP(){const Z=S.Z;if(!Z)return;const pf=S.pfs.includes(S.cfg.pf)?S.cfg.pf:(S.pfs.includes('P.TXT')?'P.TXT':S.pfs[0]);S.cfg.pf=pf;
+ const m=/^p(\d{3})/i.exec(pf);S.SD=m&&Object.keys(Z.LK).some(k=>k.startsWith((S.root+'s'+m[1]+'/').toLowerCase()))?'S'+m[1]+'/':'S/';
+ const D=parse(dec(await zread(Z,S.root+pf)));Object.assign(S,{ops:D.ops,adds:D.adds,ev:D.ev,blocks:D.blocks,routes:D.routes});
+ S.r=0;S.dir=0;S.k=1;S.run='';S.addOn=[0,0,0,0];   // читання з початку файлу: перший маршрут у файлі
+ if(S.cfg.sv)try{const v=JSON.parse(LS['bks:'+pf]);if(v&&S.routes[v.r]){S.r=v.r;S.dir=v.dir;S.k=v.k}}catch(e){}
+ $('info').textContent=`${pf}: маршрутів ${S.routes.length}, файлів у архіві ${Object.keys(Z.ents).length}.`;show(true)}
+/* звук */
+let AC,OUT,token=0,srcN=null,micG=null;
+function ctx(){if(!AC){AC=new (window.AudioContext||window.webkitAudioContext)();const c=AC.createDynamicsCompressor();c.threshold.value=-12;c.knee.value=6;c.ratio.value=12;c.attack.value=.003;c.release.value=.2;c.connect(AC.destination);OUT=c}if(AC.state=='suspended')AC.resume();return AC}
+async function wavBuf(n){const Z=S.Z;if(!Z)return;const k=S.root+S.SD+n+'.wav',r=Z.ents[k]?k:Z.LK[k.toLowerCase()];return r&&(await zread(Z,r)).buffer}
+async function play(jobs){stop();jobs=jobs.filter(j=>j.f&&j.f.length);if(!jobs.length){S.busy=0;S.ch='';draw();return}const my=++token,c=ctx();S.busy=1;
+ for(const j of jobs){if(my!=token)return;S.ch=j.ch;draw();const g=c.createGain();g.gain.value=(j.ch=='e'?S.cfg.ve:S.cfg.vs)/15;g.connect(OUT);
+  for(const n of j.f){if(my!=token)return;try{const b=await wavBuf(n);if(!b||my!=token)continue;const buf=await c.decodeAudioData(b);
+   await new Promise(r=>{if(my!=token)return r();const s=c.createBufferSource();s.buffer=buf;s.connect(g);srcN=s;s.onended=r;s.start()})}catch(e){}}}
+ if(my==token){srcN=null;S.busy=0;S.ch='';draw()}}
+const pi=f=>play([{ch:'i',f}]);
+function stop(){token++;try{srcN&&srcN.stop()}catch(e){}srcN=null;S.busy=0;S.ch=''}
+async function adText(tok){if(tok[0]=='@')return S.blocks[tok[1]]||'';const Z=S.Z;if(!Z)return'';const r=Z.LK[(S.root+'R/'+tok+'.txt').toLowerCase()];return r?dec(await zread(Z,r)).replace(/\s+/g,' ').trim():''}
+/* зовнішнє оповіщення (п.2.10) */
+function extFiles(s,p){const q=seq(),d=q[q.length-1],e=s.xl;
+ if(e){const i=s.term?(p=='dep'?1:2):(p=='dep'?0:1);if(e[i]!==undefined)return e[i]}
+ if(!s.term&&p=='arr'&&d.xl&&d.xl[0]!==undefined)return d.xl[0];
+ return p=='arr'?rt().f:[]}
+/* логіка */
+async function show(sil){const s=cur();if(!s){draw();return}const p=ph();stop();let tx='';
+ if(!s.blank){const a=S.cfg.aux&&!s.noaux;tx=(a?(p=='dep'?t(3):t(1))+' ':'')+s.name+(a&&s.term?' - '+t(2):'')}
+ const ad=s.ads?(s.ads[p=='dep'?0:1]||[]):[];if(!s.blank)for(const a of ad){const x=a=='*'?S.lastAd:await adText(a);if(x){S.lastAd=x;tx+=(tx?'   ':'')+x}}
+ let f=[...(p=='dep'?s.dep:s.arr)];
+ S.adds.forEach((a,i)=>{if(!S.addOn[i]||!a.has||!(p=='dep'?a.p[0]:a.p[1]))return;S.cnt[i]++;if(a.p[2]>1&&S.cnt[i]%a.p[2])return;f=f.concat(a.f);if(a.txt)tx+='   '+a.txt});
+ const sa={ch:'i',f},ex={ch:'e',f:S.cfg.ext?extFiles(s,p):[]},X=S.cfg.ext;
+ S.run=tx;if(S.cfg.sv)LS['bks:'+S.cfg.pf]=JSON.stringify({r:S.r,dir:S.dir,k:S.k});draw();
+ if(!sil)play(X==1?[ex,sa]:X==2?[sa,ex]:X==3?[ex,sa,ex]:[sa])}
+function move(d,sil){const L=seq().length;let k=S.k+d;
+ if(k>2*(L-1)+1){S.dir^=1;k=2}else if(k<1){S.dir^=1;k=2*(seq().length-1)}
+ S.k=k;show(sil)}
+/* ЖКІ 16×2 */
+const L16=s=>(s||'').slice(0,16).padEnd(16);
+function stopTxt(s,p){const h=(p=='dep'?t(3):t(1))+' ',suf=s.term?' - '+t(2):'',room=Math.max(0,32-h.length-suf.length);return h+s.name.slice(0,room)+suf}
+function lcd(){const m=S.menu;
+ if(m){const it=MENU()[m.n];return m.edit?[it.n+':',mval(it,m.v)]:[t(28),it.n]}
+ if(S.mode=='route')return[t(12),S.routes[S.sel]?.label||''];
+ if(S.mode=='term'){const q=rt().st.filter(s=>s.term);return[t(17),q[S.sel%q.length]?.name||'']}
+ if(S.mode=='add')return[t(50),S.addOn.map((v,i)=>v?i+1:'').filter(Boolean).join(',')||t(39)];
+ if(!S.Z)return['БК6 6.09 Audio','granato.com.ua'];
+ const s=cur();if(!s)return['',''];const x=stopTxt(s,ph());return[x.slice(0,16),x.slice(16,32)]}
+function draw(){const l=lcd(),a=L16(l[0]);let b=L16(l[1]);if(S.busy)b=b.slice(0,11)+'-=-=-';
+ $('l1').textContent=a;$('l2').textContent=b;$('ii').classList.toggle('on',S.ch=='i');$('ie').classList.toggle('on',S.ch=='e');setBoards()}
+/* пікселні табло */
+const FONT='"Arial Narrow",Arial,sans-serif';
+function mask(text,h,px,base){const c=mask.c||(mask.c=document.createElement('canvas')),x=c.getContext('2d',{willReadFrequently:true});
+ x.font=`bold ${px}px ${FONT}`;const w=Math.max(1,Math.ceil(x.measureText(text).width)+1);c.width=w;c.height=h;
+ x.font=`bold ${px}px ${FONT}`;x.fillStyle='#000';x.textBaseline='alphabetic';x.fillText(text,0,base);
+ const d=x.getImageData(0,0,w,h).data,o=new Uint8Array(w*h);for(let i=0;i<o.length;i++)o[i]=d[i*4+3]>110?1:0;return{w,h,d:o}}
+class Board{constructor(id,w,h,sp){this.cv=$(id);this.cv.width=w*4;this.cv.height=h*4;this.cx=this.cv.getContext('2d');this.w=w;this.h=h;this.sp=sp;this.layers=[];this.key=null;this.t0=0;this.last=0;this.buf=new Uint8Array(w*h)}
+ set(key,fn){if(key===this.key)return;this.key=key;this.layers=fn();this.t0=performance.now()}
+ draw(now){if(now-this.last<33)return;this.last=now;const el=now-this.t0,W=this.w,b=this.buf.fill(0);
+  let ov=0;for(const L of this.layers)if(!L.loop&&!L.fix)ov=Math.max(ov,L.m.w-L.rw);
+  const P=2000,sc=ov/this.sp*1000,ph=el%(P+sc+P),shift=ph<P?0:Math.min(ph-P,sc)*this.sp/1000;   // усі рядки табло крутяться за одним годинником
+  for(const L of this.layers){let off=0;if(L.loop)off=-L.rw+Math.floor(el/1000*this.sp)%(L.m.w+L.rw);else if(!L.fix)off=Math.min(Math.floor(shift),Math.max(0,L.m.w-L.rw));
+   for(let y=0;y<L.m.h;y++)for(let x=0;x<L.rw;x++){const sx=x+off;if(sx>=0&&sx<L.m.w&&L.m.d[y*L.m.w+sx])b[(L.y+y)*W+L.x+x]=1}}
+  const c=this.cx;c.fillStyle='#000';c.fillRect(0,0,W*4,this.h*4);
+  for(const v of[0,1]){c.fillStyle=v?'#ff9a1a':'#2a1b06';for(let i=0;i<b.length;i++)if(b[i]==v)c.fillRect((i%W)*4+.5,((i/W)|0)*4+.5,3,3)}}}
+const bx=new Board('bx',112,16,25),bi=new Board('bi',96,8,60);   // швидкості за замовчуванням з документації: зовн. 25, внутр. 60 точок/с
+function setBoards(){const r=rt(),q=seq();let num='',l1='',l2='';
+ if(r&&q.length){num=(!r.num||r.num[0]=='@')?'':r.num.replace(/@$/,'');
+  const atEnd=!S.cfg.flip&&ph()=='arr'&&(S.k>>1)==q.length-1,qq=r.seq[atEnd?S.dir^1:S.dir],a=qq[0],b=qq[qq.length-1];
+  const nm=x=>x.tabs.length?x.tabs[S.tl%x.tabs.length]:x.name,two=r.st.filter(x=>x.term).length>1&&a!==b;
+  l1=nm(b);if(two&&S.cfg.disp==0){l1=nm(a);l2=nm(b)}else if(two&&S.cfg.disp==1)l2=qq.filter(x=>x.mid).map(nm).join('  ')}
+ bx.set([num,l1,l2].join('|'),()=>{const nw=num?mask(num,16,19,15):null,x0=nw?nw.w+3:0,rw=112-x0,o=[];if(nw)o.push({m:nw,x:0,y:0,rw:nw.w,fix:1});
+  if(l2)o.push({m:mask(l1,8,9,7),x:x0,y:0,rw},{m:mask(l2,8,9,7),x:x0,y:8,rw});else if(l1)o.push({m:mask(l1,16,14,13),x:x0,y:0,rw});return o});
+ bi.set(S.run,()=>{if(!S.run)return[];const m=mask(S.run.slice(0,512),8,9,7);return[{m,x:0,y:0,rw:96,loop:m.w>96}]})}
+const frame=n=>{bx.draw(n);bi.draw(n);requestAnimationFrame(frame)};requestAnimationFrame(frame);
+setInterval(()=>{S.tl++;if(S.routes.length)draw()},8000);
+/* меню */
+const MENU=()=>[
+ {n:t(33),k:'lang',o:S.LANGS.map(x=>x.n)},{n:t(53)+' '+t(56),k:'vm',r:15,live:1},{n:t(53)+' '+t(54),k:'vs',r:15,live:1},
+ {n:t(53)+' пауза',k:'vp',r:15,live:1},{n:t(53)+' '+t(55),k:'vc',r:15,live:1},
+ {n:t(62),k:'ext',o:[t(39),'1-0','0-1','1-1']},{n:t(53)+' '+t(62),k:'ve',r:15,live:1},
+ {n:'Encoding',k:'enc',o:['auto','windows-1251','windows-1250','windows-1252','windows-1256','utf-8']},
+ {n:t(76),k:'pf',o:S.pfs.length?S.pfs:['P.TXT']},{n:t(78),k:'disp',o:[t(79),t(80),t(81)]},
+ {n:t(58),k:'aux',o:[t(39),t(38)]},{n:t(73),k:'flip',o:[t(74),t(75)]},{n:t(29),k:'sv',o:[t(39),t(38)]}];
+const mget=it=>it.o&&typeof S.cfg[it.k]=='string'?Math.max(0,it.o.indexOf(S.cfg[it.k])):S.cfg[it.k];
+const mval=(it,v)=>it.o?String(it.o[v]):String(v);
+function mset(it,v){S.cfg[it.k]=it.o&&typeof S.cfg[it.k]=='string'?it.o[v]:v;
+ if(it.k=='ve'&&!S.cfg.ext)S.cfg.ext=1;   // п. «Гучність зовн. оповіщення»: режим вмикається автоматично
+ if(it.k=='vm'&&micG)micG.gain.value=v/15;save()}
+async function menuKey(k){const m=S.menu,M=MENU(),it=M[m.n];
+ if(m.edit){const n=it.o?it.o.length:it.r+1;
+  if(k=='L'||k=='R'){m.v=(m.v+(k=='R'?1:-1)+n)%n;if(it.live)mset(it,m.v)}
+  else if(k=='PS'){mset(it,m.v);m.edit=0;if(it.k=='pf'||it.k=='enc')await loadP()}else if(k=='RST')m.edit=0;
+  draw();return}
+ if(k=='L')m.n=(m.n+M.length-1)%M.length;else if(k=='R')m.n=(m.n+1)%M.length;
+ else if(k=='PS'){m.edit=1;m.v=mget(it)}else if(k=='RST'){S.menu=null}
+ draw()}
+/* кнопки */
+function key(k){ctx();if(S.menu)return menuKey(k);
+ if(S.mode=='route'){const n=S.routes.length;if(k=='L'||k=='R'){S.sel=(S.sel+(k=='R'?1:n-1))%n;pi(S.routes[S.sel].f)}
+  else if(k=='PS'){stop();S.r=S.sel;S.dir=0;S.k=1;S.mode='run';show(true);return}else if(k=='RST'){stop();S.mode='run'}draw();return}
+ if(S.mode=='term'){const q=rt().st.filter(s=>s.term);
+  if(k=='KON'){S.sel=(S.sel+1)%q.length;pi(q[S.sel].dep)}
+  else if(k=='PS'){stop();S.dir=q.length>1&&S.sel%q.length==0?1:0;S.k=1;S.mode='run';show(true);return}else if(k=='RST'){stop();S.mode='run'}draw();return}
+ if(S.mode=='add'){const ix={KON:0,OP1:1,OP2:2,PS:3}[k];
+  if(ix!==undefined){S.addOn[ix]^=1;if(S.addOn[ix]&&S.adds[ix]?.has)pi(S.adds[ix].f)}else if(k=='D'||k=='RST')S.mode='run';draw();return}
+ switch(k){
+  case 'R':rt()&&move(1);break;case 'L':rt()&&move(-1);break;
+  case 'PS':if(S.busy){stop();draw()}else if(rt())show();break;
+  case 'MSH':if(!S.routes.length)break;S.sel=S.r;S.mode='route';draw();break;
+  case 'KON':if(!rt())break;S.sel=S.dir?0:1;S.mode='term';draw();break;
+  case 'D':S.mode='add';draw();break;
+  case 'OP1':case 'OP2':{const n=k=='OP1'?0:1,o=S.ops[n]||[];if(!o.length)break;pi(o[S.opN[n]%o.length]);S.opN[n]++;S.opN[1-n]=0;break}
+  case 'RST':S.mode='run';draw();break}}
+[['Мш','MSH'],['Д','D'],['←','L'],['→','R'],['Кон','KON'],['Оп1','OP1'],['Оп2','OP2'],['П/С','PS']].forEach(([x,k])=>{const b=document.createElement('button');b.className='ky';b.textContent=x;b.onclick=()=>key(k);$('keys').append(b)});
+const flash=x=>{$('l1').textContent=L16(x);$('l2').textContent=L16('');setTimeout(draw,1200)};
+[0,1,2,3].forEach(n=>$('dk'+n).onclick=()=>{ctx();const a=S.adds[n];if(!a||!a.has)return flash('Д'+(n+1)+': не задано');S.run=(S.run?S.run+'   ':'')+a.txt;draw();pi(a.f)});
+$('rst').onclick=()=>key('RST');$('cfg').onclick=()=>{S.menu=S.menu?null:{n:0,edit:0,v:0};draw()};
+$('sl').onclick=()=>rt()&&move(-1,true);$('sr').onclick=()=>rt()&&move(1,true);
+$('req').onclick=()=>{const e=S.ev[0];if(!e)return;ctx();S.run=e.txt+'   '+S.run;draw();pi(e.f)};
+$('vu').onclick=()=>{S.cfg.vs=Math.min(15,S.cfg.vs+1);save();flash(t(53)+' '+S.cfg.vs)};
+$('vd').onclick=()=>{S.cfg.vs=Math.max(0,S.cfg.vs-1);save();flash(t(53)+' '+S.cfg.vs)};
+$('mic').onclick=async()=>{try{const s=await navigator.mediaDevices.getUserMedia({audio:true}),c=ctx(),n=c.createMediaStreamSource(s);micG=c.createGain();micG.gain.value=S.cfg.vm/15;n.connect(micG);micG.connect(OUT);$('mic').textContent='Стоп мікр.';$('mic').onclick=()=>location.reload()}catch(e){flash('Немає доступу')}};
+$('fz').onchange=e=>{const f=e.target.files[0];f&&loadZip(f)};
+draw();idb('get').then(f=>f&&loadZip(f,true)).catch(()=>0);
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+</script></body></html>
