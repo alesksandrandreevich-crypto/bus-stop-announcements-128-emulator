@@ -1,12 +1,12 @@
 <!doctype html><html lang="uk"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="БК">
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><title>БК Інформатор</title>
 <style>
 :root{--bg:#1b1d21;--fg:#e8e8e8;--b:#2d3037;--lcd:#b7c88a;--lcdt:#1d2a0f}
 @media(prefers-color-scheme:light){:root{--bg:#e6e8ec;--fg:#111;--b:#fff}}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation;-webkit-touch-callout:none}html{-webkit-text-size-adjust:100%}
 body{margin:0 auto;background:var(--bg);color:var(--fg);font:15px -apple-system,sans-serif;padding:env(safe-area-inset-top) 12px env(safe-area-inset-bottom);max-width:520px}
 h1{font-size:15px;margin:10px 0 6px;opacity:.7;font-weight:600}
 .dev{background:#3a3d45;border-radius:14px;padding:12px}
@@ -21,7 +21,7 @@ canvas.bd{display:block;width:100%;background:#000;border-radius:6px;margin:6px 
 .fb{display:block;padding:12px 0;text-align:center;font-size:14px}input[type=file]{display:none}
 small{opacity:.6;display:block;margin-top:8px;line-height:1.35}
 </style></head><body>
-<h1>БК · емулятор інформатора</h1>
+<h1>БК · емулятор інформатора · v4</h1>
 <div class="dev"><div class="lcd"><div id="l1"></div><div id="l2"></div></div>
 <div class="ind"><span id="ii">Салон</span><span id="ie">Зовнішній гучномовець</span></div>
 <div class="keys" id="keys"></div>
@@ -30,26 +30,35 @@ small{opacity:.6;display:block;margin-top:8px;line-height:1.35}
 <div class="keys c3">
 <button class="sm" id="rst">Скидання (←+→)</button><button class="sm" id="cfg">Налашт. (Мш+П/С)</button><button class="sm" id="req">Вимога зупинки</button>
 <button class="sm" id="sl">←+П/С (без звуку)</button><button class="sm" id="sr">→+П/С (без звуку)</button><button class="sm" id="mic">Мікрофон</button>
-<button class="sm" id="vu">Гучність +</button><button class="sm" id="vd">Гучність −</button></div></div>
+<button class="sm" id="vu">Гучність +</button><button class="sm" id="vd">Гучність −</button></div>
+<div class="keys c3" style="margin-top:8px"><button class="sm" id="skf">Пропуск файлу</button><button class="sm" id="bel">Колокол: грає</button><button class="sm" id="gpsb">GPS: викл</button></div><small id="gps"></small></div>
 <h1>Зовнішнє табло 112×16</h1><canvas class="bd" id="bx"></canvas>
 <h1>Внутрішнє табло 96×8</h1><canvas class="bd" id="bi"></canvas>
 <h1>Flash-карта</h1>
 <label class="fb"><input type="file" id="fz" accept=".zip,.rar,application/zip">Завантажити архів (.zip) з P.TXT, S/, R/</label>
 <small id="info">Архів не завантажено.</small>
 <small>Мш — маршрут, Кон — кінцева, ←/→ — попередня/наступна дія (рух до зупинки → прибуття), П/С — повтор/стоп/вибір, Д — додаткові оголошення.</small>
+<label id="hl" style="position:fixed;left:-99px;opacity:0"><input type="checkbox" switch id="hs"></label>
 <script>
 //CORE
-const csv=s=>{const o=[];let c='',q=0;for(const ch of s){if(ch=='"')q=!q;else if(ch==','&&!q){o.push(c);c=''}else c+=ch}o.push(c);return o.map(x=>x.trim()).filter(Boolean)};
+const csv=s=>{const r=[];let c='',q=0;for(const ch of s){if(ch=='"')q=!q;if(ch==','&&!q){r.push(c);c=''}else c+=ch}r.push(c);
+ return r.map(x=>{const a=x.indexOf('"');if(a<0)return x;const b=x.indexOf('"',a+1);return x.slice(a+1,b<0?undefined:b)}).filter(x=>x!=='')};
+const cv=(s,lat)=>{const m=(s||'').trim().match(/^(\d*)(?:\.(\d*))?$/);if(!m||(!m[1]&&!m[2]))return NaN;const nd=m[1].length,v=parseFloat((m[1]||'0')+'.'+((m[2]||'').slice(0,4)||'0'));if(lat?nd==4:(nd==5||nd==4)){const g=Math.floor(v/100);return g+(v-g*100)/60}return v};
+const pc=s=>{const a=s.split(','),la=cv(a[0],1),lo=cv(a[1],0);if(isNaN(la)||isNaN(lo))return null;const n=x=>{x=(x||'').trim();return x===''||isNaN(+x)?null:+x};return{la,lo,sk:n(a[2]),d:n(a[3])}};
+const gpc=co=>{const p=co[0]&&pc(co[0]);if(!p)return null;p.wp=co[1]?pc(co[1]):null;return p};
+function wavOk(u){if(u.length<44)return false;const dv=new DataView(u.buffer,u.byteOffset,u.byteLength);if(dv.getUint32(0)!=0x52494646||dv.getUint32(8)!=0x57415645)return false;let p=12,fmt=0,data=0;
+ while(p+8<=u.length){const id=dv.getUint32(p),sz=dv.getUint32(p+4,true);if(id==0x666d7420){if(sz<16)return false;const f=dv.getUint16(p+8,true),ch=dv.getUint16(p+10,true),sr=dv.getUint32(p+12,true),b=dv.getUint16(p+22,true);if(f!=1||ch!=1||b!=16||sr<8000||sr>48000||sr%8000)return false;fmt=1}else if(id==0x64617461)data=sz;p+=8+sz+(sz&1)}
+ return !!fmt&&data>0}
 const lists=s=>(s||'').split('\\').map(csv);
 function pstop(l){let mid=0,term=0,blank=0,noaux=0;
  if(l[0]=='~'){mid=1;l=l.slice(1)}if(l[0]=='#'){term=1;l=l.slice(1)}
- while(l[0]=='('){const j=l.indexOf(')');if(j<0)break;l=l.slice(j+1)}   // координаты (п.2.8) не отображаются
+ const co=[];while(l[0]=='('){const j=l.indexOf(')');if(j<0)break;co.push(l.slice(1,j));l=l.slice(j+1)}   // координаты не отображаются, только для GPS
  if(l[0]==' ')l=l.slice(1);
  let ads=null;const m=l.match(/\{([^}]*)\}\s*$/);if(m){ads=m[1].split('\\').map(csv);l=l.slice(0,m.index)}
  const i=l.indexOf('^'),nm=i<0?l:l.slice(0,i),tl=i<0?'':l.slice(i+1),j=tl.indexOf('^^'),ls=lists(j<0?tl:tl.slice(0,j)),ex=j<0?null:lists(tl.slice(j+2));let n=nm;
  if(n[0]=='@'){blank=1;n=n.slice(1)}else if(n[0]=='!'){noaux=1;n=n.slice(1)}
  const subs=n.split('\\').map(x=>x.trim());
- return{mid,term,blank,noaux,name:subs[0].replace(/\t+/g,' '),xl:ex,tabs:subs[0].split('\t').map(x=>x.trim()).filter(Boolean),dep:ls[0]||[],arr:ls[1]||[],ads}}
+ return{mid,term,blank,noaux,gp:gpc(co),name:subs[0].replace(/\t+/g,' '),xl:ex,tabs:subs[0].split('\t').map(x=>x.trim()).filter(Boolean),dep:ls[0]||[],arr:ls[1]||[],ads}}
 const hd=x=>{x=(x||'~').slice(1);const m=x.match(/^<([^>]*)>/);let p=null;if(m){p=m[1].split(',').map(a=>parseInt(a)||0);x=x.slice(m[0].length)}
  const i=x.indexOf('^');return{txt:i<0?x:x.slice(0,i),sq:i<0?[]:lists(x.slice(i+1)).filter(a=>a.length),p}};
 function parse(t){t=t.replace(/^\uFEFF/,'');const L=t.split(/\r?\n/);let k=0;const H=[];
@@ -80,15 +89,19 @@ async function zread(Z,key){const e=Z.ents[key],q=e.off,d=Z.buf.subarray(q+30+Z.
 const $=id=>document.getElementById(id),LS=localStorage;
 const UK="Українська|ЗУПИНКА:|КІНЦЕВА|НАСТУПНА:|Наступна зупинка:|Виконано.|Запис зупинки.|П/С - далi...|Запис наступної.|Виконується...|Вiдмiна.|Поновити.|Виберiть № маршруту:|Усі світити|Усі погасити|Шахматка 0|Шахматка 1|Виберiть кiнцеву:|П/С-для продовж.:|Переднє|Бічне 1|Внутрішнє 1|Заднє|Внутрішнє 2|Бічне 2|Бічне 3|Внутрішнє 3|Внутрішнє 4|MODE (РЕЖИМ):|Збереження зупинки|Тест однократний|Тест циклічний|Тест функц.|Lang (Мова)|Яскравість|Параметри табло|Скинути параметри|Статус БК|УВIМКНЕНО|ВИМКНУТО|Виведення на табло|Номер рядка|Виводити|Не виводити|Нема|Ф.Тест, циклів=%d|Помилок=%d|Буде відновлено ост. стан|Вибрати КІНЦЕВУ|В БК нема RTC|Додатк.оголош.:|Дод.Оголошення|Оголошення|Гучність|в салоні|в кабіні|мікрофону|Рестарт Flash Card|Допоміжний текст|Швидкість|Нема зв'язку|Корекція|Зовн.Оповіщення|GPS параметри|Підкл./Відкл.|Дистанція|Швидкість від'їзду|Швидкість прибуття|Кіл-сть пр.файлів|Похибка GPS|АвтоСамонавчання|Самонавчання|Пр.файлів 1-ї зуп.|Зміна напрямку на кінцевій|При прибутті|При відправленні|Файл маршрутів|Файл не знайдено|Реж.зовн.табло|2 кінцеві|Кінцева та проміжні|Одна кінцева".split('|');
 const S={routes:[],r:0,dir:0,k:1,mode:'run',menu:null,sel:0,ops:[],adds:[],ev:[],blocks:{},addOn:[0,0,0,0],cnt:[0,0,0,0],opN:[0,0],busy:0,ch:'',run:'',tl:0,Z:null,root:'',SD:'S/',pfs:[],LANGS:[{n:'Українська',L:UK}],lastAd:'',
- cfg:{lang:0,vm:7,vs:7,vp:8,vc:5,ve:14,ext:1,disp:0,flip:0,enc:'auto',aux:1,sv:0,pf:'P.TXT'}};
+ cfg:{lang:0,vm:7,vs:7,vp:8,vc:5,ve:14,ext:1,disp:0,flip:0,enc:'auto',aux:1,sv:0,pf:'P.TXT',gps:0,gd:40,gw:0,gs:0,g1:0,err:15,pause:5,nobell:0}};S.gf={};const GK=['gps','gd','gw','gs','g1','err','uere','tz','dst','learn','pause','warn'];
+const G=k=>S.gf[k]!=null?S.gf[k]:S.cfg[k];
 try{Object.assign(S.cfg,JSON.parse(LS.bk2||'{}'))}catch(e){}
 const save=()=>LS.bk2=JSON.stringify(S.cfg);
 const t=i=>{const L=(S.LANGS[S.cfg.lang]||S.LANGS[0]).L;return(L[i]&&L[i].trim())||UK[i]||''};
 const dec=u=>{if(S.cfg.enc=='auto'){try{return new TextDecoder('utf-8',{fatal:true}).decode(u)}catch(e){return new TextDecoder('windows-1251').decode(u)}}return new TextDecoder(S.cfg.enc).decode(u)};
 const idb=(m,v)=>new Promise((res,rej)=>{const r=indexedDB.open('bk',1);r.onupgradeneeded=()=>r.result.createObjectStore('f');r.onerror=rej;r.onsuccess=()=>{const tx=r.result.transaction('f',m=='get'?'readonly':'readwrite'),s=tx.objectStore('f'),q=m=='get'?s.get('zip'):s.put(v,'zip');tx.oncomplete=()=>res(q.result);tx.onerror=rej}});
+const BAD=new Set(),MISS=new Set();
+const setInfo=()=>{$('info').textContent=(S.base||'')+(BAD.size||MISS.size?` · пропущено: WAV не за вимогами ${BAD.size}${BAD.size?' ('+[...BAD].slice(0,3).join(', ')+')':''}, відсутні ${MISS.size}`:'')};
+const terms=()=>rt().st.filter(s=>s.term).slice(0,2);
 const rt=()=>S.routes[S.r],seq=()=>rt()?.seq[S.dir]||[],cur=()=>seq()[S.k>>1],ph=()=>S.k&1?'arr':'dep';
 async function loadZip(file,keep){
- if(/\.rar$/i.test(file.name)){$('info').textContent='RAR поки не підтримується — запакуйте в ZIP.';return}
+ if(/\.rar$/i.test(file.name)){S.base='RAR поки не підтримується — запакуйте в ZIP.';setInfo();return}
  try{const Z=zipIndex(new Uint8Array(await file.arrayBuffer()));S.Z=Z;const ks=Object.keys(Z.ents);
   const pk=ks.filter(k=>/(^|\/)p\.txt$/i.test(k)).sort((a,b)=>a.length-b.length)[0]||ks.find(k=>/(^|\/)p[^\/]*\.txt$/i.test(k));
   if(!pk)throw'У архіві немає P.TXT';S.root=pk.slice(0,pk.lastIndexOf('/')+1);
@@ -96,25 +109,35 @@ async function loadZip(file,keep){
   S.pfs=ks.map(rl).filter(n=>n&&/^p.*\.txt$/i.test(n)).sort();S.LANGS=[{n:'Українська',L:UK}];
   for(const n of ks.map(rl).filter(n=>n&&/^lang.*\.txt$/i.test(n)).sort()){const L=dec(await zread(Z,S.root+n)).split(/\r?\n/),ok=L.length>=87;
    S.LANGS.push({n:(L[0]||n).trim()+(ok?'':' *'),L:ok?L:L.slice(0,5)})}   // короткі/старі lang-файли: лише перші 5 рядків, решта — вбудована мова
+  S.gf={};const cg=ks.map(rl).find(n=>n&&/^config_gps\.txt$/i.test(n));if(cg){const L=dec(await zread(Z,S.root+cg)).split(/\r?\n/);GK.forEach((k,i)=>{const m=/^\s*(-?\d+)/.exec(L[i]||'');if(m)S.gf[k]=+m[1]})}
+  BAD.clear();MISS.clear();
   if(!keep)idb('put',file).catch(()=>0);
-  await loadP()}catch(e){$('info').textContent='Помилка: '+(e.message||e)}}
+  await loadP()}catch(e){S.base='Помилка: '+(e.message||e);setInfo()}}
 async function loadP(){const Z=S.Z;if(!Z)return;const pf=S.pfs.includes(S.cfg.pf)?S.cfg.pf:(S.pfs.includes('P.TXT')?'P.TXT':S.pfs[0]);S.cfg.pf=pf;
  const m=/^p(\d{3})/i.exec(pf);S.SD=m&&Object.keys(Z.LK).some(k=>k.startsWith((S.root+'s'+m[1]+'/').toLowerCase()))?'S'+m[1]+'/':'S/';
  const D=parse(dec(await zread(Z,S.root+pf)));Object.assign(S,{ops:D.ops,adds:D.adds,ev:D.ev,blocks:D.blocks,routes:D.routes});
  S.r=0;S.dir=0;S.k=1;S.run='';S.addOn=[0,0,0,0];   // читання з початку файлу: перший маршрут у файлі
  if(S.cfg.sv)try{const v=JSON.parse(LS['bks:'+pf]);if(v&&S.routes[v.r]){S.r=v.r;S.dir=v.dir;S.k=v.k}}catch(e){}
- $('info').textContent=`${pf}: маршрутів ${S.routes.length}, файлів у архіві ${Object.keys(Z.ents).length}.`;show(true)}
+ S.base=`${pf}: маршрутів ${S.routes.length}, файлів у архіві ${Object.keys(Z.ents).length}.`;setInfo();gpsSync();show(true)}
 /* звук */
-let AC,OUT,token=0,srcN=null,micG=null;
-function ctx(){if(!AC){AC=new (window.AudioContext||window.webkitAudioContext)();const c=AC.createDynamicsCompressor();c.threshold.value=-12;c.knee.value=6;c.ratio.value=12;c.attack.value=.003;c.release.value=.2;c.connect(AC.destination);OUT=c}if(AC.state=='suspended')AC.resume();return AC}
-async function wavBuf(n){const Z=S.Z;if(!Z)return;const k=S.root+S.SD+n+'.wav',r=Z.ents[k]?k:Z.LK[k.toLowerCase()];return r&&(await zread(Z,r)).buffer}
-async function play(jobs){stop();jobs=jobs.filter(j=>j.f&&j.f.length);if(!jobs.length){S.busy=0;S.ch='';draw();return}const my=++token,c=ctx();S.busy=1;
- for(const j of jobs){if(my!=token)return;S.ch=j.ch;draw();const g=c.createGain();g.gain.value=(j.ch=='e'?S.cfg.ve:S.cfg.vs)/15;g.connect(OUT);
+let AC,OUT,token=0,srcN=null,micG=null;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function ctx(){if(!AC){try{navigator.audioSession&&(navigator.audioSession.type='playback')}catch(e){}   // звук у динамік навіть при вимкненому «дзвінку»
+ AC=new (window.AudioContext||window.webkitAudioContext)();OUT=AC.destination;
+ try{const n=8000,u=new Uint8Array(44+n*2),d=new DataView(u.buffer),w=(o,s)=>{for(let i=0;i<s.length;i++)u[o+i]=s.charCodeAt(i)};w(0,'RIFF');d.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');d.setUint32(16,16,true);d.setUint16(20,1,true);d.setUint16(22,1,true);d.setUint32(24,8000,true);d.setUint32(28,16000,true);d.setUint16(32,2,true);d.setUint16(34,16,true);w(36,'data');d.setUint32(40,n*2,true);
+  const a=new Audio(URL.createObjectURL(new Blob([u],{type:'audio/wav'})));a.loop=true;a.play().catch(()=>0)}catch(e){}}
+ if(AC.state!='running')AC.resume();return AC}
+async function wavBuf(n){const Z=S.Z;if(!Z)return;const k=S.root+S.SD+n+'.wav',r=Z.ents[k]?k:Z.LK[k.toLowerCase()];
+ if(!r){if(!MISS.has(n)){MISS.add(n);setInfo()}return}const u=await zread(Z,r);
+ if(!wavOk(u)){if(!BAD.has(n)){BAD.add(n);setInfo()}return}return u.buffer}   // п.1.1: PCM, 8–48 кГц (кратно 8), 16 біт, моно
+async function play(jobs){stop();if(S.menu)return;   // у налаштуваннях звук вимкнено
+ jobs=jobs.map(j=>({ch:j.ch,f:(j.f||[]).filter(n=>!(S.cfg.nobell&&n.toLowerCase()=='колокол'))})).filter(j=>j.f.length);
+ if(!jobs.length){draw();return}const my=++token,c=ctx();S.busy=1;let first=1;
+ for(const j of jobs){if(my!=token)return;if(!first)await sleep(50);first=0;if(my!=token)return;S.ch=j.ch;draw();const g=c.createGain();g.gain.value=(j.ch=='e'?S.cfg.ve:S.cfg.vs)/15;g.connect(OUT);   // 15 = оригінальна гучність файлу, нижче — тихіше
   for(const n of j.f){if(my!=token)return;try{const b=await wavBuf(n);if(!b||my!=token)continue;const buf=await c.decodeAudioData(b);
-   await new Promise(r=>{if(my!=token)return r();const s=c.createBufferSource();s.buffer=buf;s.connect(g);srcN=s;s.onended=r;s.start()})}catch(e){}}}
- if(my==token){srcN=null;S.busy=0;S.ch='';draw()}}
+   await new Promise(r=>{if(my!=token)return r();const s=c.createBufferSource();s.buffer=buf;s.connect(g);srcN=s;S.cf=n;s.onended=r;s.start()})}catch(e){}}}
+ if(my==token){srcN=null;S.cf='';S.busy=0;S.ch='';draw()}}
 const pi=f=>play([{ch:'i',f}]);
-function stop(){token++;try{srcN&&srcN.stop()}catch(e){}srcN=null;S.busy=0;S.ch=''}
+function stop(){token++;try{srcN&&srcN.stop()}catch(e){}srcN=null;S.cf='';S.busy=0;S.ch=''}
 async function adText(tok){if(tok[0]=='@')return S.blocks[tok[1]]||'';const Z=S.Z;if(!Z)return'';const r=Z.LK[(S.root+'R/'+tok+'.txt').toLowerCase()];return r?dec(await zread(Z,r)).replace(/\s+/g,' ').trim():''}
 /* зовнішнє оповіщення (п.2.10) */
 function extFiles(s,p){const q=seq(),d=q[q.length-1],e=s.xl;
@@ -122,28 +145,28 @@ function extFiles(s,p){const q=seq(),d=q[q.length-1],e=s.xl;
  if(!s.term&&p=='arr'&&d.xl&&d.xl[0]!==undefined)return d.xl[0];
  return p=='arr'?rt().f:[]}
 /* логіка */
-async function show(sil){const s=cur();if(!s){draw();return}const p=ph();stop();let tx='';
+async function show(sil,skip){const s=cur();if(!s){draw();return}const p=ph();stop();let tx='';
  if(!s.blank){const a=S.cfg.aux&&!s.noaux;tx=(a?(p=='dep'?t(3):t(1))+' ':'')+s.name+(a&&s.term?' - '+t(2):'')}
  const ad=s.ads?(s.ads[p=='dep'?0:1]||[]):[];if(!s.blank)for(const a of ad){const x=a=='*'?S.lastAd:await adText(a);if(x){S.lastAd=x;tx+=(tx?'   ':'')+x}}
- let f=[...(p=='dep'?s.dep:s.arr)];
+ let f=[...(p=='dep'?s.dep:s.arr)];if(skip)f=f.slice(skip);
  S.adds.forEach((a,i)=>{if(!S.addOn[i]||!a.has||!(p=='dep'?a.p[0]:a.p[1]))return;S.cnt[i]++;if(a.p[2]>1&&S.cnt[i]%a.p[2])return;f=f.concat(a.f);if(a.txt)tx+='   '+a.txt});
  const sa={ch:'i',f},ex={ch:'e',f:S.cfg.ext?extFiles(s,p):[]},X=S.cfg.ext;
  S.run=tx;if(S.cfg.sv)LS['bks:'+S.cfg.pf]=JSON.stringify({r:S.r,dir:S.dir,k:S.k});draw();
  if(!sil)play(X==1?[ex,sa]:X==2?[sa,ex]:X==3?[ex,sa,ex]:[sa])}
-function move(d,sil){const L=seq().length;let k=S.k+d;
+function move(d,sil,auto){const L=seq().length;let k=S.k+d;S.wpOK=false;S.minD=null;S.arrT=Date.now();
  if(k>2*(L-1)+1){S.dir^=1;k=2}else if(k<1){S.dir^=1;k=2*(seq().length-1)}
- S.k=k;show(sil)}
+ S.k=k;const s=cur();show(sil,auto&&!(k&1)&&s?(s.gp&&s.gp.sk!=null?s.gp.sk:((k>>1)==1?G('g1'):G('gs'))):0)}
 /* ЖКІ 16×2 */
 const L16=s=>(s||'').slice(0,16).padEnd(16);
 function stopTxt(s,p){const h=(p=='dep'?t(3):t(1))+' ',suf=s.term?' - '+t(2):'',room=Math.max(0,32-h.length-suf.length);return h+s.name.slice(0,room)+suf}
 function lcd(){const m=S.menu;
  if(m){const it=MENU()[m.n];return m.edit?[it.n+':',mval(it,m.v)]:[t(28),it.n]}
  if(S.mode=='route')return[t(12),S.routes[S.sel]?.label||''];
- if(S.mode=='term'){const q=rt().st.filter(s=>s.term);return[t(17),q[S.sel%q.length]?.name||'']}
+ if(S.mode=='term'){const T=terms();return[t(17),T[S.sel%T.length]?.name||'']}
  if(S.mode=='add')return[t(50),S.addOn.map((v,i)=>v?i+1:'').filter(Boolean).join(',')||t(39)];
  if(!S.Z)return['БК6 6.09 Audio','granato.com.ua'];
  const s=cur();if(!s)return['',''];const x=stopTxt(s,ph());return[x.slice(0,16),x.slice(16,32)]}
-function draw(){const l=lcd(),a=L16(l[0]);let b=L16(l[1]);if(S.busy)b=b.slice(0,11)+'-=-=-';
+function draw(){const l=lcd(),a=L16(l[0]);let b=L16(l[1]);if(S.busy&&S.mode=='run'&&!S.menu)b=b.slice(0,11)+'-=-=-';
  $('l1').textContent=a;$('l2').textContent=b;$('ii').classList.toggle('on',S.ch=='i');$('ie').classList.toggle('on',S.ch=='e');setBoards()}
 /* пікселні табло */
 const FONT='"Arial Narrow",Arial,sans-serif';
@@ -176,12 +199,13 @@ const MENU=()=>[
  {n:t(33),k:'lang',o:S.LANGS.map(x=>x.n)},{n:t(53)+' '+t(56),k:'vm',r:15,live:1},{n:t(53)+' '+t(54),k:'vs',r:15,live:1},
  {n:t(53)+' пауза',k:'vp',r:15,live:1},{n:t(53)+' '+t(55),k:'vc',r:15,live:1},
  {n:t(62),k:'ext',o:[t(39),'1-0','0-1','1-1']},{n:t(53)+' '+t(62),k:'ve',r:15,live:1},
- {n:'Encoding',k:'enc',o:['auto','windows-1251','windows-1250','windows-1252','windows-1256','utf-8']},
- {n:t(76),k:'pf',o:S.pfs.length?S.pfs:['P.TXT']},{n:t(78),k:'disp',o:[t(79),t(80),t(81)]},
- {n:t(58),k:'aux',o:[t(39),t(38)]},{n:t(73),k:'flip',o:[t(74),t(75)]},{n:t(29),k:'sv',o:[t(39),t(38)]}];
-const mget=it=>it.o&&typeof S.cfg[it.k]=='string'?Math.max(0,it.o.indexOf(S.cfg[it.k])):S.cfg[it.k];
+ {n:'Encoding',k:'enc',val:1,o:['auto','windows-1251','windows-1250','windows-1252','windows-1256','utf-8']},
+ {n:t(76),k:'pf',val:1,o:S.pfs.length?S.pfs:['P.TXT']},{n:t(78),k:'disp',o:[t(79),t(80),t(81)]},
+ {n:t(58),k:'aux',o:[t(39),t(38)]},{n:t(73),k:'flip',o:[t(74),t(75)]},{n:t(29),k:'sv',o:[t(39),t(38)]},
+ {n:t(64),k:'gps',o:[t(39),t(38)]},{n:t(65),k:'gd',val:1,o:[20,30,40,50,60,80,100]},{n:'Чекати зупинки',k:'gw',o:[t(39),t(38)]},{n:t(68),k:'gs',val:1,o:[0,1,2,3]},{n:t(72),k:'g1',val:1,o:[0,1,2,3]}];
+const mget=it=>it.val?Math.max(0,it.o.indexOf(S.cfg[it.k])):S.cfg[it.k];
 const mval=(it,v)=>it.o?String(it.o[v]):String(v);
-function mset(it,v){S.cfg[it.k]=it.o&&typeof S.cfg[it.k]=='string'?it.o[v]:v;
+function mset(it,v){S.cfg[it.k]=it.val?it.o[v]:v;if(it.k=='gps')gpsSync();
  if(it.k=='ve'&&!S.cfg.ext)S.cfg.ext=1;   // п. «Гучність зовн. оповіщення»: режим вмикається автоматично
  if(it.k=='vm'&&micG)micG.gain.value=v/15;save()}
 async function menuKey(k){const m=S.menu,M=MENU(),it=M[m.n];
@@ -194,31 +218,56 @@ async function menuKey(k){const m=S.menu,M=MENU(),it=M[m.n];
  draw()}
 /* кнопки */
 function key(k){ctx();if(S.menu)return menuKey(k);
- if(S.mode=='route'){const n=S.routes.length;if(k=='L'||k=='R'){S.sel=(S.sel+(k=='R'?1:n-1))%n;pi(S.routes[S.sel].f)}
-  else if(k=='PS'){stop();S.r=S.sel;S.dir=0;S.k=1;S.mode='run';show(true);return}else if(k=='RST'){stop();S.mode='run'}draw();return}
- if(S.mode=='term'){const q=rt().st.filter(s=>s.term);
-  if(k=='KON'){S.sel=(S.sel+1)%q.length;pi(q[S.sel].dep)}
-  else if(k=='PS'){stop();S.dir=q.length>1&&S.sel%q.length==0?1:0;S.k=1;S.mode='run';show(true);return}else if(k=='RST'){stop();S.mode='run'}draw();return}
+ if(S.mode=='route'){const n=S.routes.length;if(k=='L'||k=='R'||k=='MSH'){S.sel=(S.sel+(k=='L'?n-1:1))%n;pi(S.routes[S.sel].f)}   // Мш перемикає маршрути по колу
+  else if(k=='PS'){stop();S.r=S.sel;S.dir=0;S.mode='run';S.k=seq().length>1?2:1;show(false);return}   // одразу «НАСТУПНА» зупинка після кінцевої + озвучка
+  else if(k=='RST'){stop();S.mode='run'}draw();return}
+ if(S.mode=='term'){const T=terms();
+  if(k=='KON'||k=='L'||k=='R'){S.sel=(S.sel+1)%T.length;pi(T[S.sel].dep)}
+  else if(k=='PS'){stop();S.dir=S.sel==0?1:0;S.mode='run';S.k=seq().length>1?2:1;show(false);return}   // кінцева = пункт призначення
+  else if(k=='RST'){stop();S.mode='run'}draw();return}
  if(S.mode=='add'){const ix={KON:0,OP1:1,OP2:2,PS:3}[k];
   if(ix!==undefined){S.addOn[ix]^=1;if(S.addOn[ix]&&S.adds[ix]?.has)pi(S.adds[ix].f)}else if(k=='D'||k=='RST')S.mode='run';draw();return}
  switch(k){
   case 'R':rt()&&move(1);break;case 'L':rt()&&move(-1);break;
   case 'PS':if(S.busy){stop();draw()}else if(rt())show();break;
   case 'MSH':if(!S.routes.length)break;S.sel=S.r;S.mode='route';draw();break;
-  case 'KON':if(!rt())break;S.sel=S.dir?0:1;S.mode='term';draw();break;
+  case 'KON':{if(!rt())break;const T=terms();if(T.length<2){flash(t(81));break}S.sel=S.dir?0:1;S.mode='term';pi(T[S.sel].dep);draw();break}
   case 'D':S.mode='add';draw();break;
   case 'OP1':case 'OP2':{const n=k=='OP1'?0:1,o=S.ops[n]||[];if(!o.length)break;pi(o[S.opN[n]%o.length]);S.opN[n]++;S.opN[1-n]=0;break}
   case 'RST':S.mode='run';draw();break}}
 [['Мш','MSH'],['Д','D'],['←','L'],['→','R'],['Кон','KON'],['Оп1','OP1'],['Оп2','OP2'],['П/С','PS']].forEach(([x,k])=>{const b=document.createElement('button');b.className='ky';b.textContent=x;b.onclick=()=>key(k);$('keys').append(b)});
 const flash=x=>{$('l1').textContent=L16(x);$('l2').textContent=L16('');setTimeout(draw,1200)};
 [0,1,2,3].forEach(n=>$('dk'+n).onclick=()=>{ctx();const a=S.adds[n];if(!a||!a.has)return flash('Д'+(n+1)+': не задано');S.run=(S.run?S.run+'   ':'')+a.txt;draw();pi(a.f)});
-$('rst').onclick=()=>key('RST');$('cfg').onclick=()=>{S.menu=S.menu?null:{n:0,edit:0,v:0};draw()};
+$('rst').onclick=()=>key('RST');$('cfg').onclick=()=>{if(!S.menu)stop();S.menu=S.menu?null:{n:0,edit:0,v:0};draw()};
 $('sl').onclick=()=>rt()&&move(-1,true);$('sr').onclick=()=>rt()&&move(1,true);
 $('req').onclick=()=>{const e=S.ev[0];if(!e)return;ctx();S.run=e.txt+'   '+S.run;draw();pi(e.f)};
 $('vu').onclick=()=>{S.cfg.vs=Math.min(15,S.cfg.vs+1);save();flash(t(53)+' '+S.cfg.vs)};
 $('vd').onclick=()=>{S.cfg.vs=Math.max(0,S.cfg.vs-1);save();flash(t(53)+' '+S.cfg.vs)};
+$('skf').onclick=()=>{try{srcN&&srcN.stop()}catch(e){}};
+const belL=()=>$('bel').textContent='Колокол: '+(S.cfg.nobell?'пропуск':'грає');
+$('bel').onclick=()=>{S.cfg.nobell^=1;save();belL();if(S.cfg.nobell&&(S.cf||'').toLowerCase()=='колокол')try{srcN&&srcN.stop()}catch(e){}};belL();
+const gpsL=()=>$('gpsb').textContent='GPS: '+(G('gps')?'вкл':'викл');
+$('gpsb').onclick=()=>{S.cfg.gps^=1;save();gpsSync()};
 $('mic').onclick=async()=>{try{const s=await navigator.mediaDevices.getUserMedia({audio:true}),c=ctx(),n=c.createMediaStreamSource(s);micG=c.createGain();micG.gain.value=S.cfg.vm/15;n.connect(micG);micG.connect(OUT);$('mic').textContent='Стоп мікр.';$('mic').onclick=()=>location.reload()}catch(e){flash('Немає доступу')}};
 $('fz').onchange=e=>{const f=e.target.files[0];f&&loadZip(f)};
-draw();idb('get').then(f=>f&&loadZip(f,true)).catch(()=>0);
+/* GPS (п.2.8) */
+let gw=null;
+const hav=(a,b)=>{const r=Math.PI/180,x=(b.lo-a.lo)*r*Math.cos((a.la+b.la)/2*r),y=(b.la-a.la)*r;return 6371000*Math.hypot(x,y)};
+function gpsSync(){gpsL();if(G('gps')&&navigator.geolocation){if(gw===null)gw=navigator.geolocation.watchPosition(onPos,e=>{$('gps').textContent='GPS: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:30000})}
+ else{if(gw!==null)navigator.geolocation.clearWatch(gw);gw=null;$('gps').textContent=''}}
+function onPos(p){const c=p.coords,P={la:c.latitude,lo:c.longitude,acc:c.accuracy||0,t:p.timestamp};let sp=c.speed;if(sp==null&&S.pos)sp=hav(S.pos,P)/Math.max(1,(P.t-S.pos.t)/1000);P.sp=sp||0;S.pos=P;gpsStep()}
+function gpsStep(){const P=S.pos,s=rt()&&cur();if(!P||!s)return;
+ if(!s.gp){$('gps').textContent='GPS: у зупинки «'+s.name+'» немає координат';return}
+ const D=s.gp.d||G('gd'),d=hav(P,s.gp),eff=Math.max(G('err'),P.acc);
+ $('gps').textContent=`GPS: ${Math.round(d)} м до «${s.name}» (поріг ${D} м), точність ${Math.round(P.acc)} м, ${ph()=='dep'?'рух до зупинки':'на зупинці'}`;
+ if(S.menu||S.mode!='run')return;
+ if(ph()=='dep'){const w=s.gp.wp;if(w&&hav(P,w)<=(w.d||D))S.wpOK=true;   // проміжна точка (п.2.8.3)
+  if(d<=D&&(!w||S.wpOK)&&(!G('gw')||P.sp<1))move(1,false,true)}
+ else{S.minD=Math.min(S.minD==null?1e9:S.minD,d);
+  if(Date.now()-S.arrT>=G('pause')*1000&&d-S.minD>eff)move(1,false,true)}}   // ТС віддаляється — «Наступна»
+document.addEventListener('pointerdown',e=>{ctx();if(e.target.closest&&e.target.closest('button')){try{navigator.vibrate&&navigator.vibrate(12)}catch(x){}try{$('hl').click()}catch(x){}}});
+['gesturestart','gesturechange','gestureend'].forEach(e=>document.addEventListener(e,x=>x.preventDefault()));
+document.addEventListener('touchmove',e=>{if(e.touches.length>1)e.preventDefault()},{passive:false});
+draw();gpsSync();idb('get').then(f=>f&&loadZip(f,true)).catch(()=>0);
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
 </script></body></html>
